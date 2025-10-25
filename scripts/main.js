@@ -1,10 +1,12 @@
 window.tokens = []
 window.negSampling = false
+window.modelNo = 1
 
 var T, opt;
 
 var Y; // tsne result stored here
 var data;
+window.maxTsneIterations = 500;
 
 function updateEmbedding() {
 
@@ -71,7 +73,7 @@ function zoomHandler() {
 
 var stepnum = 0;
 function step() {
-    if (dotrain) {
+    if (dotrain && T.iter < maxTsneIterations) {
         var cost = T.step(); // do a few steps
         $("#cost").html("iteration " + T.iter + ", cost: " + cost);
     }
@@ -333,7 +335,7 @@ function showAllEmbeddings() {
 }
 
 function onTrainBegin() {
-
+    $("#trainStatus").text("Training model...")
 }
 
 function onBatchEnd(batch, logs) {
@@ -349,12 +351,13 @@ function onEpochEnd(currEpoch, logs) {
 
 function onTrainEnd() {
     $("#progressBar").removeClass("progress-bar-animated bg-warning")
+    $("#trainStatus").text("Training completed! Run t-SNE to visualise embeddings.")
 }
 
 function prepare() {
 
     // Get configs
-    var model = Number($("#model").val());
+    modelNo = Number($("#model").val());
     var windowSize = Number($("#windowSize").val());
     negSampling = $("#negativeSampling").is(':checked');
     var negatives = negSampling ? Math.floor(Number($("#negSamplingNegatives").val()) / Number($("#negSamplingPositives").val())) : -1;
@@ -367,7 +370,7 @@ function prepare() {
     $("#tokenTable tbody").empty()
 
     // Show generated data
-    dataset = getDataPairs(model, textData, windowSize, negSampling, negatives)
+    dataset = getDataPairs(modelNo, textData, windowSize, negSampling, negatives)
     $("#inlabels").val(showTokens(dataset["tokens"]))
     $("#statsVocabSize").text("Vocabulary size: " + dataset["tokens"].length)
     $("#statsNumExamples").text("No. of training examples: " + dataset["inputTensors"].shape[0])
@@ -396,7 +399,7 @@ function getOptimiser(num, lr) {
 
 function trainModel() {
     // Get train configs
-    var model = Number($("#model").val())
+    modelNo = Number($("#model").val())
     var embeddingSize = Number($("#embeddingSize").val())
     var totalEpochs = Number($("#epochs").val())
     var learningRate = Number($("#learningRate").val())
@@ -407,7 +410,7 @@ function trainModel() {
     $("#progressBar").addClass("progress-bar-animated bg-warning")
     $("#progressBar").attr("style", "width: 0%")
 
-    if (model === 1 && negSampling) {
+    if (modelNo === 1 && negSampling) {
 
         // Skip-gram with negative sampling
         embedding_and_model = createModelLogistic(dataset["vocabularySize"], embeddingSize)
@@ -430,7 +433,7 @@ function trainModel() {
             $("#stopbut").removeAttr("disabled");
         });
 
-    } else if (model === 1 || model === 2) {
+    } else if (modelNo === 1 || modelNo === 2) {
 
         // SKip-gram without negative sampling
         embedding_and_model = createModel(dataset["vocabularySize"], embeddingSize)
@@ -478,7 +481,7 @@ function getRandomData() {
         sample += "[" + dataset["outputTensors"].arraySync()[randIdx].join(",") + "]\n";
         sample += "Output:\n";
         sample += "[" + dataset["binTensors"].arraySync()[randIdx] + "]\n";
-    } else if (model === 1 && !negSampling) {
+    } else if (modelNo === 1 && !negSampling) {
         sample += "Input: ";
         sample += tokens[dataset["inputTensors"].arraySync()[randIdx].indexOf(1)] + "\n";
         sample += "[" + dataset["inputTensors"].arraySync()[randIdx].join(",") + "]\n";
@@ -502,27 +505,36 @@ $(window).load(() => {
 
     initEmbedding();
 
+    var modelName = "Word2Vec (Skip-gram)";
+    $("#modelDetails").text("The " + modelName + " model trains words to predict their" + 
+    " context / surrounding words.")
+    $("#instructionsParameters").text("Specify parameters to train the " + modelName + " model:")
+
     $("#model").on('change', function () {
+        var modelName = "Word2Vec (Skip-gram)";
         if (this.value === '1') {
             $("#negativeSampling").removeAttr("disabled");
-            $("#modelDetails").text("This model trains words to predict their context.")
+            $("#modelDetails").text("The " + modelName + " model trains words to predict their" + 
+            " context / surrounding words.")
         } else {
+            var modelName = "Word2Vec (CBOW)";
             $("#negativeSampling")
                 .prop("checked", false)
                 .attr("disabled", "disabled");
             $("#negativeSamplingRatio div").remove();
-            $("#modelDetails").text("This model trains multiple words (in the form of bag-of-words) surrounding a target word.")
-            $("#trainDetails").text("Model will be trained with categorical cross entropy loss function.")
+            $("#modelDetails").text("The " + modelName + " model trains multiple words (in the form of bag-of-words) surrounding a target word.")
+            $("#trainDetails").text("The " + modelName + " model will be trained with categorical cross entropy loss function.")
         }
+        $("#instructionsParameters").text("Specify parameters to train the " + modelName + " model:")
     });
 
     $("#negativeSampling").change(function () {
         if (this.checked) {
             $("#negativeSamplingRatio").append(negativeSamplingHTML);
-            $("#trainDetails").text("Model will be trained with binary cross entropy loss function.")
+            $("#trainDetails").text("The model will be trained with binary cross entropy loss function.")
         } else {
             $("#negativeSamplingRatio div").remove();
-            $("#trainDetails").text("Model will be trained with categorical cross entropy loss function.")
+            $("#trainDetails").text("The model will be trained with categorical cross entropy loss function.")
         }
     });
 
@@ -556,6 +568,7 @@ $(window).load(() => {
             perplexity: parseInt($("#perptxt").val()),
             dim: data[0].length
         };
+        maxTsneIterations = Number($("#iterations").val());
         T = new tsnejs.tSNE(opt); // create a tSNE instance
 
         var dfv = 'raw';
